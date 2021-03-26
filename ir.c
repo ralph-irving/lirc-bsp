@@ -3,11 +3,11 @@
 **
 ** This file is licensed under BSD. Please see the LICENSE file for details.
 */
-#define RUNTIME_DEBUG 1
+#define RUNTIME_DEBUG 0
 
-#include "common.h"
-#include "ui/jive.h"
+#include "jive.h"
 
+extern LOG_CATEGORY *log_ui;
 
 /*
  * IR input will cause the following events to be sent:
@@ -23,9 +23,8 @@
 /* button hold threshold .9 seconds - HOLD event is sent when a new ir code is received after IR_HOLD_TIMEOUT ms*/
 #define IR_HOLD_TIMEOUT 900
 
-
 /* time after which, if no additional ir code is received, a button input is considered complete */
-#define IR_KEYUP_TIME 128
+#define IR_KEYUP_TIME 256
 
 /* This ir code used by some remotes, such as the boom remote, to indicate that a code is repeating */
 #define IR_REPEAT_CODE 0
@@ -48,6 +47,19 @@ static enum jive_ir_state {
 } ir_state = IR_STATE_NONE;
 
 
+const char* getJiveEventName(JiveEventType type) 
+{
+	switch (type) 
+	{
+		case JIVE_EVENT_IR_PRESS: return "JIVE_EVENT_IR_PRESS";
+		case JIVE_EVENT_IR_UP: return "JIVE_EVENT_IR_UP";
+		case JIVE_EVENT_IR_DOWN: return "JIVE_EVENT_IR_DOWN";
+		case JIVE_EVENT_IR_REPEAT: return "JIVE_EVENT_IR_REPEAT";
+		case JIVE_EVENT_IR_HOLD: return "JIVE_EVENT_IR_HOLD";
+		default: return "JIVE_EVENT_OTHER";
+	}
+}
+
 
 static Uint32 queue_ir_event(Uint32 ticks, Uint32 code, JiveEventType type) {
 	JiveEvent event;
@@ -57,8 +69,10 @@ static Uint32 queue_ir_event(Uint32 ticks, Uint32 code, JiveEventType type) {
 	event.type = type;
 	event.u.ir.code = code;
 	event.ticks = ticks;
-	jive_queue_event(&event);
 
+	LOG_WARN(log_ui, "type: %s code: %x ticks: %u", getJiveEventName(type), code, ticks);
+
+	jive_queue_event(&event);
 	return 0;
 }
 
@@ -99,6 +113,7 @@ void ir_input_code(Uint32 ir_code, Uint32 input_time) {
 			/* ignore, since we have no way to know what 
 			 * key was sent.
 			 */
+			LOG_WARN(log_ui,"IR_REPEAT_CODE ignored");
 			return;
 		}
 
@@ -130,7 +145,7 @@ void ir_input_code(Uint32 ir_code, Uint32 input_time) {
 			ir_handle_down(ir_code, input_time);
 			break;
 		}
-				
+
 		queue_ir_event(input_time, ir_code, (JiveEventType) JIVE_EVENT_IR_REPEAT);
 
 		if (ir_state == IR_STATE_DOWN && input_time >= ir_down_millis + IR_HOLD_TIMEOUT) {
