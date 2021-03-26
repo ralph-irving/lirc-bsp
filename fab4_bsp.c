@@ -197,11 +197,10 @@ static Uint32 ir_cmd_map(const char *c) {
 
 static Uint32 ir_key_map(const char *c, const char *r) {
 	int i;
-	int count;
+	int count = 0;
 
 	for (i = 0; keymap[i].lirc; i++) {
 		if (!strcmp(c, keymap[i].lirc)) {
-			// inputlirc issues "0", while LIRC uses "00"
 			if (r) count = xtoi(r);
 			if (keymap[i].repeat || !count) {
 				return keymap[i].code;
@@ -214,17 +213,15 @@ static Uint32 ir_key_map(const char *c, const char *r) {
 	return 0;
 }
 
-static Uint32 bsp_get_realtime_millis() {
 #if 0
+static Uint32 bsp_get_realtime_millis() {
 	Uint32 millis;
 	struct timespec now;
 	clock_gettime(CLOCK_REALTIME,&now);
 	millis=now.tv_sec*1000+now.tv_nsec/1000000;
 	return(millis);
-#else
-	return(jive_jiffies());
-#endif
 }
+#endif
 
 static int handle_ir_events(int fd) {
 	char *code;
@@ -233,11 +230,10 @@ static int handle_ir_events(int fd) {
 		
 		Uint32 input_time;
 		Uint32 ir_code = 0;
-		int count = 0;
 		
 		if (code == NULL) return -1;
 
-		input_time = bsp_get_realtime_millis();
+		input_time = jive_jiffies();
 		
 		if (ir_config) {
 			/* allow lirc_client to decode then lookup cmd in our table
@@ -257,21 +253,13 @@ static int handle_ir_events(int fd) {
 			char *b, *r;
 			strtok(code, " \n");     // discard
 			r = strtok(NULL, " \n"); // repeat count
-			if (r) count = xtoi(r);
 			b = strtok(NULL, " \n"); // key name
 			if (r && b) {
 				ir_code = ir_key_map(b, r);
-#if 0
-				if ( count ) ir_code = 0;
-#endif
 				LOG_WARN(log_ui,"ir lirc: %s [%s] -> %x", b, r, ir_code);
 			}
 		}
-#if 0
-		if (ir_code || count ) {
-#else
 		if (ir_code) {
-#endif
 			ir_input_code(ir_code, input_time);
 		}
 		
@@ -288,11 +276,11 @@ static int open_input_devices(void) {
 	snprintf(lircrc, sizeof(lircrc), "%s%cuserpath%csettings%clircrc.conf", platform_get_home_dir(), DIR_SEPARATOR_CHAR, DIR_SEPARATOR_CHAR, DIR_SEPARATOR_CHAR);
 
         if (ir_event_fd > 0) {
-                if (lirc_readconfig(lircrc, &ir_config, NULL) != 0) {
-			LOG_INFO(log_ui,"error reading config: %s", lircrc);
+                if (lirc_readconfig_only(lircrc, &ir_config, NULL) != 0) {
+			LOG_INFO(log_ui,"lirc client config: %s not found - cmd mapping disabled", lircrc);
                 }
                 else {
-			LOG_INFO(log_ui,"loaded lircrc config: %s", lircrc);
+			LOG_INFO(log_ui,"loaded lirc client config: %s", lircrc);
                 }
 
         } else {
@@ -305,9 +293,9 @@ static int open_input_devices(void) {
 static int event_pump(lua_State *L) {
 	fd_set fds;
 	struct timeval timeout;
-
+#if 0
 	Uint32 now;
-	
+#endif	
 	FD_ZERO(&fds);
 	memset(&timeout, 0, sizeof(timeout));
 
@@ -316,17 +304,17 @@ static int event_pump(lua_State *L) {
 	}
 
 	if (select(FD_SETSIZE, &fds, NULL, NULL, &timeout) < 0) {
-		perror("ir_bsp:");
+		LOG_ERROR(log_ui,"ir_bsp: select failed %d", errno);
 		return -1;
 	}
-
-	now = bsp_get_realtime_millis();
-
+#if 0
+	now = jive_jiffies();
+#endif
 	if (ir_event_fd != -1 && FD_ISSET(ir_event_fd, &fds)) {
 		handle_ir_events(ir_event_fd);
 	}
 
-	ir_input_complete(now);
+	ir_input_complete(jive_jiffies());
 	
 	return 0;
 }
