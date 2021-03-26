@@ -1,30 +1,156 @@
 /*
-** Copyright 2010 Logitech. All Rights Reserved.
+** Copyright 2021 Ralph Irving. All Rights Reserved.
 **
 ** This file is licensed under BSD. Please see the LICENSE file for details.
 */
 #define RUNTIME_DEBUG 1
 
-#include "common.h"
-#include "ui/jive.h"
+#include <lirc/lirc_client.h>
 
-#include <linux/input.h>
+/* Avoid name conflicts from syslog.h/curl.h inclusion in lirc client header */
+#ifdef LOG_DEBUG
+#undef LOG_DEBUG
+#endif
+#ifdef LOG_INFO
+#undef LOG_INFO
+#endif
+#ifdef PACKAGE
+#undef PACKAGE
+#endif
+#ifdef PACKAGE_STRING
+#undef PACKAGE_STRING
+#endif
+#ifdef PACKAGE_BUGREPORT
+#undef PACKAGE_BUGREPORT
+#endif
+#ifdef PACKAGE_NAME
+#undef PACKAGE_NAME
+#endif
+#ifdef PACKAGE_TARNAME
+#undef PACKAGE_TARNAME
+#endif
+#ifdef PACKAGE_VERSION
+#undef PACKAGE_VERSION
+#endif
+#ifdef VERSION
+#undef VERSION
+#endif
+
+#include "jive.h"
+
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <time.h>
 
-#include <netinet/in.h>
-#include <linux/types.h>
-#include <linux/netlink.h>
+
+#define LIRC_CLIENT_ID "ir_bsp"
 
 static int ir_event_fd = -1;
-static int uevent_fd = -1;
+static struct lirc_config *ir_config;
 
-#define TIMEVAL_TO_TICKS(tv) ((tv.tv_sec * 1000) + (tv.tv_usec / 1000))
+LOG_CATEGORY *log_ui;
+
+/* cmds based on entries in Slim_Device_Remote.ir these may appear as config entries in lircrc. */
+
+static struct {
+	char  *cmd;
+	Uint32 code;
+} cmdmap[] = {
+	{ "voldown",  0x768900ff },
+	{ "volup",    0x7689807f },
+	{ "rew",      0x7689c03f },
+	{ "fwd",      0x7689a05f },
+	{ "pause",    0x768920df },
+	{ "play",     0x768910ef },
+	{ "power",    0x768940bf },
+	{ "muting",   0x7689c43b },
+	{ "power_on", 0x76898f70 },
+	{ "power_off",0x76898778 },
+	{ "preset_1", 0x76898a75 },
+	{ "preset_2", 0x76894ab5 },
+	{ "preset_3", 0x7689ca35 },
+	{ "preset_4", 0x76892ad5 },
+	{ "preset_5", 0x7689aa55 },
+	{ "preset_6", 0x76896a95 },
+	{ NULL,       0          },
+};
+
+/* selected lirc namespace button names as defaults, some support repeat. */
+
+static struct {
+	char  *lirc;
+	Uint32 code;
+	bool  repeat;
+} keymap[] = {
+	{ "KEY_VOLUMEDOWN", 0x768900ff, true  },
+	{ "KEY_VOLUMEUP",   0x7689807f, true  },
+	{ "KEY_PREVIOUS",   0x7689c03f, true  },
+	{ "KEY_REWIND",     0x7689c03f, true  },
+	{ "KEY_NEXT",       0x7689a05f, true  },
+	{ "KEY_FORWARD",    0x7689a05f, true  },
+	{ "KEY_PAUSE",      0x768920df, true  },
+	{ "KEY_PLAY",       0x768910ef, false },
+	{ "KEY_POWER",      0x768940bf, false },
+	{ "KEY_MUTE",       0x7689c43b, false },
+	{ "KEY_0",          0x76899867, true  },
+	{ "KEY_1",          0x7689f00f, true  },
+	{ "KEY_2",          0x768908f7, true  },
+	{ "KEY_3",          0x76898877, true  },
+	{ "KEY_4",          0x768948b7, true  },
+	{ "KEY_5",          0x7689c837, true  },
+	{ "KEY_6",          0x768928d7, true  },
+	{ "KEY_7",          0x7689a857, true  },
+	{ "KEY_8",          0x76896897, true  },
+	{ "KEY_9",          0x7689e817, true  },
+	{ "KEY_FAVORITES",  0x768918e7, false },
+	{ "KEY_FAVORITES",  0x7689e21d, false },
+	{ "KEY_SEARCH",     0x768958a7, false },
+	{ "KEY_SEARCH",     0x7689629d, false },
+	{ "KEY_SHUFFLE",    0x7689d827, false },
+	{ "KEY_SLEEP",      0x7689b847, false },
+	{ "KEY_INSERT",     0x7689609f, false }, // Add
+	{ "KEY_UP",         0x7689e01f, true  },
+	{ "KEY_LEFT",       0x7689906f, true  },
+	{ "KEY_RIGHT",      0x7689d02f, true  },
+	{ "KEY_DOWN",       0x7689b04f, true  },
+	{ "KEY_HOME",       0x768922dd, false },
+	{ "KEY_MEDIA_REPEAT", 0x768938c7, false },
+	{ "KEY_TITLE",      0x76897887, false }, // Now Playing
+	{ "KEY_TITLE",      0x7689a25d, false }, // Now Playing
+	{ "KEY_TEXT",       0x7689f807, false }, // Size 
+	{ "KEY_BRIGHTNESS_CYCLE", 0x768904fb, false },
+	{ NULL,             0         , false },
+};
 
 /* in ir.c */
 void ir_input_code(Uint32 code, Uint32 time);
 void ir_input_complete(Uint32 time);
+
+
+static Uint32 ir_cmd_map(const char *c) {
+	int i;
+	for (i = 0; cmdmap[i].cmd; i++) {
+		if (!strcmp(c, cmdmap[i].cmd)) {
+			return cmdmap[i].code;
+		}
+	}
+	return 0;
+}
+
+static Uint32 ir_key_map(const char *c, const char *r) {
+	int i;
+	for (i = 0; keymap[i].lirc; i++) {
+		if (!strcmp(c, keymap[i].lirc)) {
+			// inputlirc issues "0", while LIRC uses "00"
+			if (keymap[i].repeat || !strcmp(r, "0") || !strcmp(r,"00")) {
+				return keymap[i].code;
+			}
+			LOG_WARN(log_ui,"repeat suppressed");
+			break;
+		}
+	}
+	return 0;
+}
 
 
 static Uint32 bsp_get_realtime_millis() {
@@ -35,164 +161,71 @@ static Uint32 bsp_get_realtime_millis() {
 	return(millis);
 }
 
-static Uint32 queue_sw_event(Uint32 ticks, Uint32 code, Uint32 value) {
-	JiveEvent event;
-
-	memset(&event, 0, sizeof(JiveEvent));
-	event.type = JIVE_EVENT_SWITCH;
-	event.u.sw.code = code;
-	event.u.sw.value = value;
-	event.ticks = ticks;
-	jive_queue_event(&event);
-
-	return 0;
-}
-
 static int handle_ir_events(int fd) {
-	struct input_event ev[64];
-	size_t rd;
-	int i;
-
-	rd = read(fd, ev, sizeof(struct input_event) * 64);
-
-	if (rd < (int) sizeof(struct input_event)) {
-		perror("read error");
-		return -1;
-	}
-
-	for (i = 0; i <= rd / sizeof(struct input_event); i++) {	
-		if (ev[i].type == EV_MSC) {
-			//TIMEVAL_TO_TICKS doesn't not really return ticks since these ev times are jiffies, but we won't be comparing against real ticks.
-			Uint32 input_time = TIMEVAL_TO_TICKS(ev[i].time);
-			Uint32 ir_code = ev[i].value;
-
-			ir_input_code(ir_code, input_time);
-
-		} else if(ev[i].type == EV_SW) {	
-			// Pass along all switch events to jive
-			Uint32 input_time = TIMEVAL_TO_TICKS(ev[i].time);
-			queue_sw_event(input_time, ev[i].code, ev[i].value);
+	char *code;
+	
+	if (fd > 0 && lirc_nextcode(&code) == 0) {
+		
+		Uint32 input_time = bsp_get_realtime_millis();
+		Uint32 ir_code = 0;
+		
+		if (code == NULL) return -1;
+		
+		if (ir_config) {
+			/* allow lirc_client to decode then lookup cmd in our table
+			   we can only send one IR event to slimproto so break after first one. */
+			char *c;
+			while (lirc_code2char(ir_config, code, &c) == 0 && c != NULL) {
+				ir_code = ir_cmd_map(c);
+				if (ir_code) {
+					LOG_WARN(log_ui,"ir cmd: %s -> %x", c, ir_code);
+				}
+			}
 		}
-		// ignore EV_SYN
-	}
 
+		if (!ir_code) {
+			// try to match on lirc button name if it is from the standard namespace
+			// this allows use of non slim remotes without a specific entry in .lircrc
+			char *b, *r;
+			strtok(code, " \n");     // discard
+			r = strtok(NULL, " \n"); // repeat count
+			b = strtok(NULL, " \n"); // key name
+			if (r && b) {
+				ir_code = ir_key_map(b, r);
+				LOG_WARN(log_ui,"ir lirc: %s [%s] -> %x", b, r, ir_code);
+			}
+		}
+
+		if (ir_code) {
+                        ir_input_code(ir_code, input_time);
+		}
+		
+		free(code);
+	}
+	
 	return 0;
 }
 
 static int open_input_devices(void) {
-	char path[PATH_MAX];
-	struct stat sbuf;
-	char name[254];
-	int n, fd;
+	char lircrc[PATH_MAX];
+	ir_event_fd = lirc_init(LIRC_CLIENT_ID, 0);
 
-	for (n=0; n<10; n++) {
-		snprintf(path, sizeof(path), "/dev/input/event%d", n);
+	snprintf(lircrc, sizeof(lircrc), "%s%cuserpath%csettings%clircrc.conf", platform_get_home_dir(), DIR_SEPARATOR_CHAR, DIR_SEPARATOR_CHAR, DIR_SEPARATOR_CHAR);
 
-		if ((stat(path, &sbuf) != 0) | !S_ISCHR(sbuf.st_mode)) {
-			continue;
-		}
+        if (ir_event_fd > 0) {
+                if (lirc_readconfig(lircrc, &ir_config, NULL) != 0) {
+			LOG_INFO(log_ui,"error reading config: %s", lircrc);
+                }
+                else {
+			LOG_INFO(log_ui,"loaded lircrc config: %s", lircrc);
+                }
 
-		if ((fd = open(path, O_RDONLY, 0)) < 0) {
-			perror("open");
-			continue;
-		}
-
-		if (ioctl(fd, EVIOCGNAME(sizeof(name)), name) < 0) {
-			perror("ioctrl");
-			close(fd);
-			continue;
-		}
-		else if (strstr(name, "FAB4 IR")) {
-			ir_event_fd = fd;
-		}
-		else {
-			fprintf(stderr, "input device (%d) (%s)\n", n, name);
-			close(fd);
-		}
-	}
+        } else {
+		LOG_ERROR(log_ui,"failed to connect to lircd - ir processing disabled");
+        }
 
 	return (ir_event_fd != -1);
 }
-
-
-static int open_uevent_fd(void)
-{
-        struct sockaddr_nl saddr;
-        const int buffersize = 16 * 1024 * 1024;
-        int retval;
-
-        memset(&saddr, 0x00, sizeof(struct sockaddr_nl));
-        saddr.nl_family = AF_NETLINK;
-        saddr.nl_pid = getpid();
-        saddr.nl_groups = 1;
-
-        uevent_fd = socket(PF_NETLINK, SOCK_DGRAM, NETLINK_KOBJECT_UEVENT);
-        if (uevent_fd == -1) {
-                fprintf(stderr, "error getting socket: %s", strerror(errno));
-                return -1;
-        }
-
-        /* set receive buffersize */
-        setsockopt(uevent_fd, SOL_SOCKET, SO_RCVBUFFORCE, &buffersize, sizeof(buffersize));
-
-        retval = bind(uevent_fd, (struct sockaddr *) &saddr, sizeof(struct sockaddr_nl));
-        if (retval < 0) {
-                fprintf(stderr, "bind failed: %s", strerror(errno));
-                close(uevent_fd);
-                uevent_fd = -1;
-                return -1;
-        }
-        return 0;
-}
-
-
-static void handle_uevent(lua_State *L, int sock)
-{
-        char *ptr, *end, buffer[2048];
-        ssize_t size;
-
-        size = recv(uevent_fd, &buffer, sizeof(buffer), 0);
-        if (size <  0) {
-                if (errno != EINTR)
-                        printf("unable to receive kernel netlink message: %s", strerror(errno));
-                return;
-        }
-
-	lua_getglobal(L, "ueventHandler");
-	if (lua_isnil(L, -1)) {
-		lua_pop(L, 1);
-		fprintf(stderr, "No ueventHandler\n");
-		return;
-	}
-
-	ptr = buffer;
-	end = strchr(ptr, '\0');
-
-	/* evt */
-	lua_pushlstring(L, ptr, end-ptr);
-
-	/* msg */
-	lua_newtable(L);
-	while (end + 1 < buffer + size) {
-		ptr = end + 1;
-		end = strchr(ptr, '=');
-
-		lua_pushlstring(L, ptr, end-ptr);
-
-		ptr = end + 1;
-		end = strchr(ptr, '\0');
-
-		lua_pushlstring(L, ptr, end-ptr);
-
-		lua_settable(L, -3);
-	}
-
-	if (lua_pcall(L, 2, 0, 0) != 0) {
-		fprintf(stderr, "error calling ueventHandler %s\n", lua_tostring(L, -1));
-		lua_pop(L, 1);
-	}
-}
-
 
 static int event_pump(lua_State *L) {
 	fd_set fds;
@@ -206,17 +239,10 @@ static int event_pump(lua_State *L) {
 	if (ir_event_fd != -1) {
 		FD_SET(ir_event_fd, &fds);
 	}
-	if (uevent_fd != -1) {
-		FD_SET(uevent_fd, &fds);
-	}
 
 	if (select(FD_SETSIZE, &fds, NULL, NULL, &timeout) < 0) {
-		perror("jivebsp:");
+		perror("ir_bsp:");
 		return -1;
-	}
-
-	if (uevent_fd != -1 && FD_ISSET(uevent_fd, &fds)) {
-		handle_uevent(L, uevent_fd);
 	}
 
 	now = bsp_get_realtime_millis();
@@ -231,11 +257,11 @@ static int event_pump(lua_State *L) {
 
 
 int luaopen_fab4_bsp(lua_State *L) {
+ 	log_ui = LOG_CATEGORY_GET("squeezeplay.ui");
+
 	if (open_input_devices()) {
 		jive_sdlevent_pump = event_pump;
 	}
-
-	open_uevent_fd();
 
 	return 1;
 }
