@@ -3,7 +3,7 @@
 **
 ** This file is licensed under BSD. Please see the LICENSE file for details.
 */
-#define RUNTIME_DEBUG 1
+#define RUNTIME_DEBUG 0
 
 #include <lirc/lirc_client.h>
 
@@ -38,11 +38,6 @@
 
 #include "jive.h"
 
-#include <sys/time.h>
-#include <sys/stat.h>
-#include <time.h>
-
-
 #define LIRC_CLIENT_ID "ir_bsp"
 
 static int ir_event_fd = -1;
@@ -50,7 +45,7 @@ static struct lirc_config *ir_config;
 
 LOG_CATEGORY *log_ui;
 
-/* cmds based on entries in Slim_Device_Remote.ir these may appear as config entries in lircrc. */
+/* cmds based on entries in Slim_Devices_Remote.ir these may appear as config entries in lircrc. */
 
 static struct {
 	char  *cmd;
@@ -137,6 +132,7 @@ static Uint32 ir_cmd_map(const char *c) {
 	return 0;
 }
 
+
 static Uint32 ir_key_map(const char *c, const char *r) {
 	int i;
 	for (i = 0; keymap[i].lirc; i++) {
@@ -153,21 +149,14 @@ static Uint32 ir_key_map(const char *c, const char *r) {
 }
 
 
-static Uint32 bsp_get_realtime_millis() {
-	Uint32 millis;
-	struct timespec now;
-	clock_gettime(CLOCK_REALTIME,&now);
-	millis=now.tv_sec*1000+now.tv_nsec/1000000;
-	return(millis);
-}
-
 static int handle_ir_events(int fd) {
 	char *code;
 	
 	if (fd > 0 && lirc_nextcode(&code) == 0) {
 		
-		Uint32 input_time = bsp_get_realtime_millis();
+		Uint32 input_time = jive_jiffies();
 		Uint32 ir_code = 0;
+		Uint32 count = 0;
 		
 		if (code == NULL) return -1;
 		
@@ -184,20 +173,22 @@ static int handle_ir_events(int fd) {
 		}
 
 		if (!ir_code) {
+			char *b, *r;
 			// try to match on lirc button name if it is from the standard namespace
 			// this allows use of non slim remotes without a specific entry in .lircrc
-			char *b, *r;
 			strtok(code, " \n");     // discard
 			r = strtok(NULL, " \n"); // repeat count
+			if (r) count = atoi(r);
 			b = strtok(NULL, " \n"); // key name
 			if (r && b) {
 				ir_code = ir_key_map(b, r);
+				if ( count > 1) ir_code = 0;
 				LOG_WARN(log_ui,"ir lirc: %s [%s] -> %x", b, r, ir_code);
 			}
 		}
 
-		if (ir_code) {
-                        ir_input_code(ir_code, input_time);
+		if (ir_code || count > 1) {
+			ir_input_code(ir_code, input_time);
 		}
 		
 		free(code);
@@ -245,18 +236,19 @@ static int event_pump(lua_State *L) {
 		return -1;
 	}
 
-	now = bsp_get_realtime_millis();
+	now = jive_jiffies();
 
 	if (ir_event_fd != -1 && FD_ISSET(ir_event_fd, &fds)) {
 		handle_ir_events(ir_event_fd);
 	}
-	ir_input_complete(now);
+
+	ir_input_complete(jive_jiffies());
 	
 	return 0;
 }
 
 
-int luaopen_fab4_bsp(lua_State *L) {
+int luaopen_ir_bsp(lua_State *L) {
  	log_ui = LOG_CATEGORY_GET("squeezeplay.ui");
 
 	if (open_input_devices()) {
