@@ -104,10 +104,11 @@ static int ir_handle_down(Uint32 code, Uint32 time) {
 
 
 void ir_input_code(Uint32 ir_code, Uint32 input_time) {
+#if 0
 	bool repeat_code_sent = false;
-						
+#endif						
 	ir_received_this_loop = true;
-			
+#if 0
 	if (ir_code == IR_REPEAT_CODE) {
 		if (ir_state == IR_STATE_NONE) {
 			/* ignore, since we have no way to know what 
@@ -120,7 +121,7 @@ void ir_input_code(Uint32 ir_code, Uint32 input_time) {
 		ir_code = ir_last_code;   
 		repeat_code_sent = true;
 	}
-
+#endif
 	/* did ir code change, if so complete the old code */
 	if (ir_state != IR_STATE_NONE && ir_code != ir_last_code) {
 		ir_handle_up();
@@ -132,7 +133,8 @@ void ir_input_code(Uint32 ir_code, Uint32 input_time) {
 		break;
 
 	case IR_STATE_DOWN:
-	case IR_STATE_HOLD_SENT: 
+	case IR_STATE_HOLD_SENT:
+#if 0
 		/* pump's up check might not have kicked in yet, so we
 		 * need the check for a quick second press.
 		 */
@@ -145,7 +147,7 @@ void ir_input_code(Uint32 ir_code, Uint32 input_time) {
 			ir_handle_down(ir_code, input_time);
 			break;
 		}
-
+#endif
 		queue_ir_event(input_time, ir_code, (JiveEventType) JIVE_EVENT_IR_REPEAT);
 
 		if (ir_state == IR_STATE_DOWN && input_time >= ir_down_millis + IR_HOLD_TIMEOUT) {
