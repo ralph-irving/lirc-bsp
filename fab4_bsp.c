@@ -51,23 +51,63 @@ static struct {
 	char  *cmd;
 	Uint32 code;
 } cmdmap[] = {
-	{ "voldown",  0x768900ff },
-	{ "volup",    0x7689807f },
-	{ "rew",      0x7689c03f },
-	{ "fwd",      0x7689a05f },
-	{ "pause",    0x768920df },
-	{ "play",     0x768910ef },
-	{ "power",    0x768940bf },
-	{ "muting",   0x7689c43b },
+	{ "0", 0x76899867 },
+	{ "1", 0x7689f00f },
+	{ "2", 0x768908f7 },
+	{ "3", 0x76898877 },
+	{ "4", 0x768948b7 },
+	{ "5", 0x7689c837 },
+	{ "6", 0x768928d7 },
+	{ "7", 0x7689a857 },
+	{ "8", 0x76896897 },
+	{ "9", 0x7689e817 },
+	{ "add", 0x7689609f },
+	{ "analog_input_line_in", 0x76890ef1 },
+	{ "arrow_down", 0x7689b04f },
+	{ "arrow_left", 0x7689906f },
+	{ "arrow_right", 0x7689d02f },
+	{ "arrow_up", 0x7689e01f },
+	{ "brightness", 0x768904fb },
+	{ "browse", 0x7689708f },
+	{ "digital_input_aes-ebu", 0x768906f9 },
+	{ "digital_input_bnc-spdif", 0x76898679 },
+	{ "digital_input_rca-spdif", 0x768946b9 },
+	{ "digital_input_toslink", 0x7689c639 },
+	{ "favorites", 0x768918e7 },
+	{ "favorites_2", 0x7689e21d },
+	{ "fwd", 0x7689a05f },
+	{ "home", 0x768922dd },
+	{ "menu_browse_album", 0x76897c83 },
+	{ "menu_browse_artist", 0x7689748b },
+	{ "menu_browse_music", 0x7689728d },
+	{ "menu_browse_playlists", 0x76897a85 },
+	{ "menu_search_album", 0x76895ca3 },
+	{ "menu_search_artist", 0x768954ab },
+	{ "menu_search_song", 0x768952ad },
+	{ "muting", 0x7689c43b },
+	{ "now_playing", 0x76897887 },
+	{ "now_playing_2", 0x7689a25d },
+	{ "pause", 0x768920df },
+	{ "play", 0x768910ef },
+	{ "power", 0x768940bf },
+	{ "power_off", 0x76898778 },
 	{ "power_on", 0x76898f70 },
-	{ "power_off",0x76898778 },
 	{ "preset_1", 0x76898a75 },
 	{ "preset_2", 0x76894ab5 },
 	{ "preset_3", 0x7689ca35 },
 	{ "preset_4", 0x76892ad5 },
 	{ "preset_5", 0x7689aa55 },
 	{ "preset_6", 0x76896a95 },
-	{ NULL,       0          },
+	{ "repeat", 0x768938c7 },
+	{ "rew", 0x7689c03f },
+	{ "search", 0x768958a7 },
+	{ "search_2", 0x7689629d },
+	{ "shuffle", 0x7689d827 },
+	{ "size", 0x7689f807 },
+	{ "sleep", 0x7689b847 },
+	{ "voldown", 0x768900ff },
+	{ "volup", 0x7689807f },
+	{ NULL, 0 },
 };
 
 /* selected lirc namespace button names as defaults, some support repeat. */
@@ -121,44 +161,83 @@ static struct {
 void ir_input_code(Uint32 code, Uint32 time);
 void ir_input_complete(Uint32 time);
 
+/* Take a hex string and convert it to a 32bit number (max 8 hex digits) */
+static Uint32 xtoi(const char *hex) {
+	Uint32 val = 0;
+
+	while (*hex) {
+
+		/* get current character then increment */
+	        Uint8 byte = *hex++; 
+
+		/* transform hex character to the 4bit equivalent number, using the ascii table indexes */
+		if (byte >= '0' && byte <= '9') byte = byte - '0';
+		else if (byte >= 'a' && byte <='f') byte = byte - 'a' + 10;
+		else if (byte >= 'A' && byte <='F') byte = byte - 'A' + 10;
+
+		/* shift 4 to make space for new digit, and add the 4 bits of the new digit */
+		val = (val << 4) | (byte & 0xF);
+	}
+
+	return val;
+}
 
 static Uint32 ir_cmd_map(const char *c) {
 	int i;
+
 	for (i = 0; cmdmap[i].cmd; i++) {
 		if (!strcmp(c, cmdmap[i].cmd)) {
 			return cmdmap[i].code;
 		}
 	}
+
 	return 0;
 }
 
 
 static Uint32 ir_key_map(const char *c, const char *r) {
 	int i;
+	int count;
+
 	for (i = 0; keymap[i].lirc; i++) {
 		if (!strcmp(c, keymap[i].lirc)) {
 			// inputlirc issues "0", while LIRC uses "00"
-			if (keymap[i].repeat || !strcmp(r, "0") || !strcmp(r,"00")) {
+			if (r) count = xtoi(r);
+			if (keymap[i].repeat || !count) {
 				return keymap[i].code;
 			}
-			LOG_WARN(log_ui,"repeat suppressed");
+			LOG_WARN(log_ui,"repeat suppressed, count:%i", count);
 			break;
 		}
 	}
+
 	return 0;
 }
 
+static Uint32 bsp_get_realtime_millis() {
+#if 0
+	Uint32 millis;
+	struct timespec now;
+	clock_gettime(CLOCK_REALTIME,&now);
+	millis=now.tv_sec*1000+now.tv_nsec/1000000;
+	return(millis);
+#else
+	return(jive_jiffies());
+#endif
+}
 
 static int handle_ir_events(int fd) {
 	char *code;
 	
 	if (fd > 0 && lirc_nextcode(&code) == 0) {
 		
-		Uint32 input_time = jive_jiffies();
+		Uint32 input_time;
 		Uint32 ir_code = 0;
-		Uint32 count = 0;
+		int count = 0;
 		
 		if (code == NULL) return -1;
+
+		input_time = bsp_get_realtime_millis();
 		
 		if (ir_config) {
 			/* allow lirc_client to decode then lookup cmd in our table
@@ -173,21 +252,26 @@ static int handle_ir_events(int fd) {
 		}
 
 		if (!ir_code) {
-			char *b, *r;
 			// try to match on lirc button name if it is from the standard namespace
 			// this allows use of non slim remotes without a specific entry in .lircrc
+			char *b, *r;
 			strtok(code, " \n");     // discard
 			r = strtok(NULL, " \n"); // repeat count
-			if (r) count = atoi(r);
+			if (r) count = xtoi(r);
 			b = strtok(NULL, " \n"); // key name
 			if (r && b) {
 				ir_code = ir_key_map(b, r);
-				if ( count > 1) ir_code = 0;
+#if 0
+				if ( count ) ir_code = 0;
+#endif
 				LOG_WARN(log_ui,"ir lirc: %s [%s] -> %x", b, r, ir_code);
 			}
 		}
-
-		if (ir_code || count > 1) {
+#if 0
+		if (ir_code || count ) {
+#else
+		if (ir_code) {
+#endif
 			ir_input_code(ir_code, input_time);
 		}
 		
@@ -236,13 +320,13 @@ static int event_pump(lua_State *L) {
 		return -1;
 	}
 
-	now = jive_jiffies();
+	now = bsp_get_realtime_millis();
 
 	if (ir_event_fd != -1 && FD_ISSET(ir_event_fd, &fds)) {
 		handle_ir_events(ir_event_fd);
 	}
 
-	ir_input_complete(jive_jiffies());
+	ir_input_complete(now);
 	
 	return 0;
 }
