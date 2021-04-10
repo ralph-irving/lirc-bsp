@@ -1,5 +1,5 @@
 /*
-** Copyright 2010 Logitech. All Rights Reserved.
+** Copyright 2021 Ralph Irving. All Rights Reserved.
 **
 ** This file is licensed under BSD. Please see the LICENSE file for details.
 */
@@ -22,13 +22,13 @@ extern LOG_CATEGORY *log_ui;
 
 /* button hold threshold .9 seconds - HOLD event is sent when a new ir code is received after IR_HOLD_TIMEOUT ms*/
 #define IR_HOLD_TIMEOUT 900
-
+#if 0
 /* time after which, if no additional ir code is received, a button input is considered complete */
-#define IR_KEYUP_TIME 256
+#define IR_KEYUP_TIME 128
 
 /* This ir code used by some remotes, such as the boom remote, to indicate that a code is repeating */
 #define IR_REPEAT_CODE 0
-
+#endif
 /* time that new ir input has occurred (using the input_event time as the time source) */
 Uint32 ir_down_millis = 0;
 
@@ -104,11 +104,9 @@ static int ir_handle_down(Uint32 code, Uint32 time) {
 
 
 void ir_input_code(Uint32 ir_code, Uint32 input_time) {
-#if 0
-	bool repeat_code_sent = false;
-#endif						
 	ir_received_this_loop = true;
 #if 0
+	bool repeat_code_sent = false;
 	if (ir_code == IR_REPEAT_CODE) {
 		if (ir_state == IR_STATE_NONE) {
 			/* ignore, since we have no way to know what 
@@ -121,10 +119,13 @@ void ir_input_code(Uint32 ir_code, Uint32 input_time) {
 		ir_code = ir_last_code;   
 		repeat_code_sent = true;
 	}
-#endif
+
 	/* did ir code change, if so complete the old code */
 	if (ir_state != IR_STATE_NONE && ir_code != ir_last_code) {
+#endif
+	if (ir_state != IR_STATE_NONE && ir_code == 0xFFFFFFFF) {
 		ir_handle_up();
+		return;
 	}
 
 	switch (ir_state) {
@@ -166,9 +167,10 @@ void ir_input_complete(Uint32 now) {
 	/* Now that we've handled the ir input, determine if ir input has
 	 * stopped.
 	 */
+#if 0
 	if (!ir_received_this_loop && ir_last_input_millis && (now >= IR_KEYUP_TIME + ir_last_input_millis)) {
 		ir_handle_up();
 	}
-
+#endif
 	ir_received_this_loop = false;
 }

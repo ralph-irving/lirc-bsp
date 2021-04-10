@@ -213,16 +213,6 @@ static Uint32 ir_key_map(const char *c, const char *r) {
 	return 0;
 }
 
-#if 0
-static Uint32 bsp_get_realtime_millis() {
-	Uint32 millis;
-	struct timespec now;
-	clock_gettime(CLOCK_REALTIME,&now);
-	millis=now.tv_sec*1000+now.tv_nsec/1000000;
-	return(millis);
-}
-#endif
-
 static int handle_ir_events(int fd) {
 	char *code;
 	
@@ -254,9 +244,13 @@ static int handle_ir_events(int fd) {
 			strtok(code, " \n");     // discard
 			r = strtok(NULL, " \n"); // repeat count
 			b = strtok(NULL, " \n"); // key name
-			if (r && b) {
-				ir_code = ir_key_map(b, r);
-				LOG_WARN(log_ui,"ir lirc: %s [%s] -> %x", b, r, ir_code);
+			if (strstr(b, "_EVUP") != NULL) {
+				ir_code = 0xFFFFFFFF;
+			} else {
+				if (r && b) {
+					ir_code = ir_key_map(b, r);
+					LOG_WARN(log_ui,"ir lirc: %s [%s] -> %x", b, r, ir_code);
+				}
 			}
 		}
 		if (ir_code) {
@@ -293,9 +287,8 @@ static int open_input_devices(void) {
 static int event_pump(lua_State *L) {
 	fd_set fds;
 	struct timeval timeout;
-#if 0
 	Uint32 now;
-#endif	
+
 	FD_ZERO(&fds);
 	memset(&timeout, 0, sizeof(timeout));
 
@@ -307,14 +300,14 @@ static int event_pump(lua_State *L) {
 		LOG_ERROR(log_ui,"ir_bsp: select failed %d", errno);
 		return -1;
 	}
-#if 0
+
 	now = jive_jiffies();
-#endif
+
 	if (ir_event_fd != -1 && FD_ISSET(ir_event_fd, &fds)) {
 		handle_ir_events(ir_event_fd);
 	}
 
-	ir_input_complete(jive_jiffies());
+	ir_input_complete(now);
 	
 	return 0;
 }
