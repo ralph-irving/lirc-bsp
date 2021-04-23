@@ -8,6 +8,7 @@
 #include "jive.h"
 
 extern LOG_CATEGORY *log_ui;
+extern Uint32 bsp_get_realtime_millis (void);
 
 /*
  * IR input will cause the following events to be sent:
@@ -61,16 +62,16 @@ const char* getJiveEventName(JiveEventType type)
 }
 
 
-static Uint32 queue_ir_event(Uint32 ticks, Uint32 code, JiveEventType type) {
+static Uint32 queue_ir_event(Uint32 millis, Uint32 code, JiveEventType type) {
 	JiveEvent event;
 
 	memset(&event, 0, sizeof(JiveEvent));
 
 	event.type = type;
 	event.u.ir.code = code;
-	event.ticks = ticks;
+	event.ticks = millis;
 
-	LOG_WARN(log_ui, "type: %s code: %x ticks: %u", getJiveEventName(type), code, ticks);
+	LOG_WARN(log_ui, "type: %s code: %x ms: %u", getJiveEventName(type), code, millis);
 
 	jive_queue_event(&event);
 	return 0;
@@ -78,13 +79,16 @@ static Uint32 queue_ir_event(Uint32 ticks, Uint32 code, JiveEventType type) {
 
 
 static int ir_handle_up() {
+	Uint32 now;
+
+	now = bsp_get_realtime_millis();
 	if (ir_state != IR_STATE_HOLD_SENT) {
-		//odd to use sdl_getTicks here, since other ir events sent input_event time - code using PRESS and UP shouldn't care yet about the time....
-		queue_ir_event(jive_jiffies(), ir_last_code, (JiveEventType) JIVE_EVENT_IR_PRESS);
+		// code using PRESS and UP shouldn't care yet about the time....
+		queue_ir_event(now, ir_last_code, (JiveEventType) JIVE_EVENT_IR_PRESS);
 	}
 
 	ir_state = IR_STATE_NONE;
-	queue_ir_event(jive_jiffies(), ir_last_code, (JiveEventType) JIVE_EVENT_IR_UP);
+	queue_ir_event(now, ir_last_code, (JiveEventType) JIVE_EVENT_IR_UP);
 	
 	ir_down_millis = 0;
 	ir_last_input_millis = 0;

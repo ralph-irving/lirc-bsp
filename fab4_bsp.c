@@ -213,6 +213,14 @@ static Uint32 ir_key_map(const char *c, const char *r) {
 	return 0;
 }
 
+Uint32 bsp_get_realtime_millis() {
+	Uint32 millis;
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC,&now);
+	millis = (now.tv_sec * 1000) + (now.tv_nsec / 1000000);
+	return(millis);
+}
+
 static int handle_ir_events(int fd) {
 	char *code;
 	
@@ -223,7 +231,7 @@ static int handle_ir_events(int fd) {
 		
 		if (code == NULL) return -1;
 
-		input_time = jive_jiffies();
+		input_time = bsp_get_realtime_millis();
 		
 		if (ir_config) {
 			/* allow lirc_client to decode then lookup cmd in our table
@@ -301,7 +309,7 @@ static int event_pump(lua_State *L) {
 		return -1;
 	}
 
-	now = jive_jiffies();
+	now = bsp_get_realtime_millis();
 
 	if (ir_event_fd != -1 && FD_ISSET(ir_event_fd, &fds)) {
 		handle_ir_events(ir_event_fd);
