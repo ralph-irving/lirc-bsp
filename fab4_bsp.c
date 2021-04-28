@@ -150,6 +150,7 @@ static struct {
 	{ "KEY_DOWN",       0x7689b04f, true  },
 	{ "KEY_HOME",       0x768922dd, false },
 	{ "KEY_MEDIA_REPEAT", 0x768938c7, false },
+	{ "KEY_AGAIN",      0x768938c7, false },
 	{ "KEY_TITLE",      0x76897887, false }, // Now Playing
 	{ "KEY_TITLE",      0x7689a25d, false }, // Now Playing
 	{ "KEY_TEXT",       0x7689f807, false }, // Size 
@@ -246,20 +247,25 @@ static int handle_ir_events(int fd) {
 		}
 
 		if (!ir_code) {
-			// try to match on lirc button name if it is from the standard namespace
-			// this allows use of non slim remotes without a specific entry in .lircrc
-			char *b, *r;
+			char *k, *r;
+
 			strtok(code, " \n");     // discard
 			r = strtok(NULL, " \n"); // repeat count
-			b = strtok(NULL, " \n"); // key name
-			if (strstr(b, "_EVUP") != NULL) {
-				ir_code = 0xFFFFFFFF;
-			} else {
-				if (r && b) {
-					ir_code = ir_key_map(b, r);
-					LOG_WARN(log_ui,"ir lirc: %s [%s] -> %x", b, r, ir_code);
+			k = strtok(NULL, " \n"); // key name
+		
+			if (r && k) {
+				// provides IR_UP for ir_config lookup as well
+				if (strstr(k, "_EVUP") != NULL) {
+					ir_code = 0xFFFFFFFF;
+				} else {
+					// try to match on lirc button name if it is from the standard namespace
+					// this allows use of non slim remotes without a specific entry in .lircrc
+					ir_code = ir_key_map(k, r);
 				}
+
+				LOG_WARN(log_ui,"ir lirc: %s [%i] -> %x", k, xtoi(r), ir_code);
 			}
+
 		}
 		if (ir_code) {
 			ir_input_code(ir_code, input_time);
