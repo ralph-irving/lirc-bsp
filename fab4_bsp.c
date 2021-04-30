@@ -199,19 +199,21 @@ static Uint32 ir_cmd_map(const char *c) {
 static Uint32 ir_key_map(const char *c, const char *r) {
 	int i;
 	int count = 0;
+	Uint32 code = 0;
 
 	for (i = 0; keymap[i].lirc; i++) {
 		if (!strcmp(c, keymap[i].lirc)) {
 			if (r) count = xtoi(r);
 			if (keymap[i].repeat || !count) {
-				return keymap[i].code;
+				code = keymap[i].code;
+			} else {
+				LOG_WARN(log_ui,"repeat suppressed, count:%i", count);
 			}
-			LOG_WARN(log_ui,"repeat suppressed, count:%i", count);
 			break;
 		}
 	}
 
-	return 0;
+	return code;
 }
 
 Uint32 bsp_get_realtime_millis() {
