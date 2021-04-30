@@ -16,7 +16,7 @@ extern Uint32 bsp_get_realtime_millis (void);
  * EVENT_IR_REPEAT - sent out as fast as ir codes are received after IR_DOWN occurs
  * EVENT_IR_PRESS - sent when no new codes are received (or a new key is pressed) prior to the IR_HOLD_TIMEOUT time
  * EVENT_IR_HOLD - sent once when ir input occurs and the IR_HOLD_TIMEOUT time has been exceeded
- * EVENT_IR_UP - sent when input stops (IR_KEYUP_TIME exceeded) or the ir code changes
+ * EVENT_IR_UP - sent when the ir code changes
  */
 
 
@@ -104,10 +104,15 @@ static int ir_handle_down(Uint32 code, Uint32 time) {
 void ir_input_code(Uint32 ir_code, Uint32 input_time) {
 	ir_received_this_loop = true;
 
-	if (ir_state != IR_STATE_NONE && ir_code == 0xFFFFFFFF) {
-		ir_handle_up();
+	/* IR_KEY_UP */
+	if (ir_code == 0xFFFFFFFF) {
+		if ( ir_last_code ) {
+			ir_handle_up();
+		} else {
+			ir_state = IR_STATE_NONE;
+		}
 		return;
-	}
+	}	
 
 	switch (ir_state) {
 	case IR_STATE_NONE:
