@@ -295,7 +295,7 @@ static int open_input_devices(void) {
                 }
 
         } else {
-		LOG_ERROR(log_ui,"failed to connect to lircd - ir processing disabled");
+		LOG_ERROR(log_ui,"failed to connect to lircd (%d) - ir processing disabled", ir_event_fd);
         }
 
 	return (ir_event_fd != -1);
