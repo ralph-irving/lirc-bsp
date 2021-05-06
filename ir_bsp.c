@@ -331,7 +331,11 @@ static int event_pump(lua_State *L) {
 
 
 int luaopen_ir_bsp(lua_State *L) {
- 	log_ui = LOG_CATEGORY_GET("squeezeplay.ui");
+#ifdef JIVELITE
+	log_ui = LOG_CATEGORY_GET("jivelite.ui");
+#else
+	log_ui = LOG_CATEGORY_GET("squeezeplay.ui");
+#endif
 
 	if (open_input_devices()) {
 		jive_sdlevent_pump = event_pump;
