@@ -20,7 +20,6 @@ extern Uint32 bsp_get_realtime_millis (void);
  */
 
 
-
 /* button hold threshold .9 seconds - HOLD event is sent when a new ir code is received after IR_HOLD_TIMEOUT ms*/
 #define IR_HOLD_TIMEOUT 900
 
@@ -77,7 +76,7 @@ static int ir_handle_up() {
 
 	now = bsp_get_realtime_millis();
 	if (ir_state != IR_STATE_HOLD_SENT) {
-		// code using PRESS and UP shouldn't care yet about the time....
+		/* code using PRESS and UP shouldn't care yet about the time.... */
 		queue_ir_event(now, ir_last_code, (JiveEventType) JIVE_EVENT_IR_PRESS);
 	}
 

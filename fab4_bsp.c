@@ -143,7 +143,7 @@ static struct {
 	{ "KEY_SEARCH",     0x7689629d, false },
 	{ "KEY_SHUFFLE",    0x7689d827, false },
 	{ "KEY_SLEEP",      0x7689b847, false },
-	{ "KEY_INSERT",     0x7689609f, false }, // Add
+	{ "KEY_INSERT",     0x7689609f, false }, /* Add */
 	{ "KEY_UP",         0x7689e01f, true  },
 	{ "KEY_LEFT",       0x7689906f, true  },
 	{ "KEY_RIGHT",      0x7689d02f, true  },
@@ -151,9 +151,9 @@ static struct {
 	{ "KEY_HOME",       0x768922dd, false },
 	{ "KEY_MEDIA_REPEAT", 0x768938c7, false },
 	{ "KEY_AGAIN",      0x768938c7, false },
-	{ "KEY_TITLE",      0x76897887, false }, // Now Playing
-	{ "KEY_TITLE",      0x7689a25d, false }, // Now Playing
-	{ "KEY_TEXT",       0x7689f807, false }, // Size 
+	{ "KEY_TITLE",      0x76897887, false }, /* Now Playing */
+	{ "KEY_TITLE",      0x7689a25d, false }, /* Now Playing */
+	{ "KEY_TEXT",       0x7689f807, false }, /* Size */
 	{ "KEY_BRIGHTNESS_CYCLE", 0x768904fb, false },
 	{ NULL,             0         , false },
 };
@@ -251,17 +251,18 @@ static int handle_ir_events(int fd) {
 		if (!ir_code) {
 			char *k, *r;
 
-			strtok(code, " \n");     // discard
-			r = strtok(NULL, " \n"); // repeat count
-			k = strtok(NULL, " \n"); // key name
+			strtok(code, " \n");     /* discard */
+			r = strtok(NULL, " \n"); /* repeat count */
+			k = strtok(NULL, " \n"); /* key name */
 		
 			if (r && k) {
-				// provides IR_UP for ir_config lookup as well
+				/* provides IR_UP for ir_config lookup as well */
 				if (strstr(k, "_EVUP") != NULL) {
 					ir_code = 0xFFFFFFFF;
 				} else {
-					// try to match on lirc button name if it is from the standard namespace
-					// this allows use of non slim remotes without a specific entry in .lircrc
+					/* try to match on lirc button name if it is from the standard namespace
+					** this allows use of non slim remotes without a specific entry in .lircrc
+					*/
 					ir_code = ir_key_map(k, r);
 				}
 
