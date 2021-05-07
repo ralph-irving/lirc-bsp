@@ -1,4 +1,4 @@
-CFLAGS = -s -O2 -I../squeezeplay/src/ui -I../squeezeplay/src -I$(PREFIX)/include/SDL -I$(PREFIX)/include
+CFLAGS = -s -O2 -fPIC -I../squeezeplay/src/ui -I../squeezeplay/src -I$(PREFIX)/include/SDL -I$(PREFIX)/include
 LDFLAGS = -s -L$(PREFIX)/lib -llirc_client -Wl,-rpath,$(PREFIX)/lib
 
 MODULE := ir_bsp.so
