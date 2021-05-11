@@ -237,8 +237,7 @@ static int handle_ir_events(int fd) {
 		input_time = bsp_get_realtime_millis();
 		
 		if (ir_config) {
-			/* allow lirc_client to decode then lookup cmd in our table
-			   we can only send one IR event to slimproto so break after first one. */
+			/* allow lirc_client to decode then lookup cmd in our table, stop on first match. */
 			char *c;
 			while (lirc_code2char(ir_config, code, &c) == 0 && c != NULL) {
 				ir_code = ir_cmd_map(c);
